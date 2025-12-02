@@ -1,12 +1,15 @@
+import os
+import shutil
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, HttpUrl
 from typing import Optional, Dict, AsyncGenerator
 from app.core.rag_engine import process_repo_to_chroma
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 import asyncio
 import json
+from app.utils import set_interval
 
 router = APIRouter()
 
@@ -16,9 +19,6 @@ sessions: Dict[str, dict] = {}
 
 # Event queues for each session
 event_queues: Dict[str, asyncio.Queue] = {}
-
-# Add to the top with other storage
-chat_histories: Dict[str, list] = {}  # Store chat history per session
 
 class SetRepoRequest(BaseModel):
     github_url: HttpUrl
@@ -253,63 +253,6 @@ async def chat_with_repo(request: ChatRequest):
             detail=f"Error processing question: {str(e)}"
         )
 
-
-# @router.get("/session-status/{session_id}")
-# async def get_session_status(session_id: str):
-#     """
-#     Check the status of a repository indexing session.
-    
-#     Possible statuses:
-#     - pending: Indexing job queued
-#     - indexing: Currently processing repository
-#     - ready: Repository indexed and ready for queries
-#     - failed: Indexing failed
-#     """
-    
-#     if session_id not in sessions:
-#         raise HTTPException(
-#             status_code=404,
-#             detail="Session not found"
-#         )
-    
-#     session = sessions[session_id]
-    
-#     return {
-#         "session_id": session_id,
-#         "github_url": session["github_url"],
-#         "status": session["status"],
-#         "created_at": session["created_at"],
-#         "indexed_at": session["indexed_at"],
-#         "error": session["error"]
-#     }
-
-
-# @router.delete("/session/{session_id}")
-# async def delete_session(session_id: str):
-#     """
-#     Delete a session and free up resources.
-#     """
-    
-#     if session_id not in sessions:
-#         raise HTTPException(
-#             status_code=404,
-#             detail="Session not found"
-#         )
-    
-#     # Clean up session
-#     del sessions[session_id]
-    
-#     # Optionally clean up chroma_store directory
-#     # import shutil
-#     # persist_dir = f"chroma_store/{session_id}"
-#     # shutil.rmtree(persist_dir, ignore_errors=True)
-    
-#     return {
-#         "message": "Session deleted successfully",
-#         "session_id": session_id
-#     }
-
-
 @router.get("/sessions")
 async def list_sessions():
     """
@@ -328,3 +271,54 @@ async def list_sessions():
             for sid, data in sessions.items()
         ]
     }
+
+
+def cleanup_inactive_sessions():
+    """
+    Remove sessions inactive for more than 24 hours AND remove any directories
+    in chroma_store/ that do not correspond to existing session IDs.
+    Returns total count of deleted sessions + deleted orphan directories.
+    """
+    now = datetime.utcnow()
+    deleted_count = 0
+    sessions_to_delete = []
+
+    # --- Remove inactive sessions ---
+    for session_id, session_data in list(sessions.items()):
+        created_at = datetime.fromisoformat(session_data["created_at"])
+        
+        if now - created_at > timedelta(hours=24):
+            sessions_to_delete.append(session_id)
+
+    for session_id in sessions_to_delete:
+        # Remove from sessions dict
+        if session_id in sessions:
+            del sessions[session_id]
+
+        # Remove ChromaDB directory
+        persist_dir = f"chroma_store/{session_id}"
+        if os.path.exists(persist_dir):
+            shutil.rmtree(persist_dir, ignore_errors=True)
+
+        deleted_count += 1
+
+    # --- Remove orphan directories not present in sessions dict ---
+    chroma_base = "chroma_store"
+    orphan_deleted = 0
+
+    if os.path.exists(chroma_base):
+        for dirname in os.listdir(chroma_base):
+            dirpath = os.path.join(chroma_base, dirname)
+
+            # Only consider directories
+            if not os.path.isdir(dirpath):
+                continue
+
+            # Directory name not in active sessions -> delete
+            if dirname not in sessions:
+                shutil.rmtree(dirpath, ignore_errors=True)
+                orphan_deleted += 1
+
+    return deleted_count + orphan_deleted
+
+set_interval(cleanup_inactive_sessions, 10)
