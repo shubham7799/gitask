@@ -125,5 +125,4 @@ def process_repo_to_chroma(github_url: str, persist_dir="chroma_store"):
         return qa_chain
 
     except Exception as e:
-        print(f"❌ Error processing repository: {e}")
         raise

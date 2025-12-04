@@ -234,7 +234,6 @@ async def chat_with_repo(request: ChatRequest):
     
     try:
         # Invoke with session_id in config for conversational memory
-        print(f"Invoking QA chain with session_id: {request.session_id}")
         answer = qa_chain.invoke(
             {"question": request.question},
             config={"configurable": {"session_id": request.session_id}}
