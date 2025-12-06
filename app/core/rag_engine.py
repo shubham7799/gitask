@@ -49,13 +49,17 @@ def process_repo_to_chroma(github_url: str, persist_dir="chroma_store"):
     try:
         # Step 1: Extract files from repo
         files = extract_repo_files(github_url)
+        print(f"Extracted {len(files)} files from repository")
 
         if len(files) == 0:
             raise ValueError("No source files found in repository")
 
+        print(f"Extracted {len(files)} files from repository")
+
         # Step 2: Init vector DB
         store = LangchainChromaStore(persist_dir=persist_dir)
         all_chunks = []
+        print("Initialized LangchainChromaStore")
 
         # Step 3: Run chunker file-by-file
         for file_path, content in files.items():
@@ -66,13 +70,16 @@ def process_repo_to_chroma(github_url: str, persist_dir="chroma_store"):
                 )
                 all_chunks.extend(file_chunks)
             except Exception as e:
+                print(f"Failed to chunk file {file_path}: {str(e)}")
                 continue
 
         if len(all_chunks) == 0:
+            print("No chunks created from repository files")
             raise ValueError("No chunks created from repository files")
 
         # Step 4: Store into Chroma
         store.add_chunks(all_chunks)
+        print(f"Stored {len(all_chunks)} chunks into Chroma at {persist_dir}")
 
         # Step 5: Create RAG chain
         retriever = store.get_retriever(k=5)
