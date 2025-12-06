@@ -89,6 +89,8 @@ def index_repository(session_id: str, github_url: str):
             "status": "failed",
             "error": str(e)
         })
+
+        print(f"Indexing failed for session {session_id}: {str(e)}")
         
         # Emit error event
         asyncio.run(emit_event(session_id, {
