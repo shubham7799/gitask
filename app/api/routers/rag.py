@@ -322,4 +322,4 @@ def cleanup_inactive_sessions():
 
     return deleted_count + orphan_deleted
 
-set_interval(cleanup_inactive_sessions, 10)
+set_interval(cleanup_inactive_sessions, 100)
